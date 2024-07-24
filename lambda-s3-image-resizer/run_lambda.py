@@ -1,6 +1,10 @@
 import os
 import json
 
+# === FOR TESTING PERPOSE === #
+import boto3
+boto3.setup_default_session(profile_name='localstack')
+
 import logging
 logging.basicConfig(level=logging.INFO)
 

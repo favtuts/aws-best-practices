@@ -27,11 +27,11 @@
             "arn": "arn:aws:s3:::awslambda-imageresizer-test-002"
           },
           "object": {
-            "key": "Happy%20Face.jpg",
-            "size": 1024,
+            "key": "happy-smiley-face.jpg",
+            "size": 181915,
             "versionId": "version",
-            "eTag": "d41d8cd98f00b204e9800998ecf8427e",
-            "sequencer": "Happy Sequencer"
+            "eTag": "7c78efd6e95d7e1928ee34fa25fb5eb1",
+            "sequencer": "happy-smiley-face"
           }
         }
       }

@@ -337,3 +337,256 @@ In VSCode, you need to install the Python Debugger extension. Then configure the
 Finally, open the file `run_lambda.py`, then cho RUN AND DEBUG with configuration: `Python Debugger: Current File`
 
 ![vs_run_debug_lambda](./images/aws-lambda-resizer-vscode-run-and-debug.png)
+
+# Complete Lambda Process
+
+We are parsing the uploaded image details from the event.
+
+Using boto3, we are open the image and resize it using the Pillow library. 
+
+Finally using boto3 to upload the resized image with a 'resized-' prefix attached.
+
+```python
+import boto3
+from PIL import Image
+import io
+
+def handler(event, context):
+    # Get the S3 bucket and key from the event
+    bucket = event['Records'][0]['s3']['bucket']['name']
+    key = event['Records'][0]['s3']['object']['key']
+    print("Got new image: " + key + " from the bucket: " + bucket)
+
+    # Set the desired width and height for resizing
+    width = 800
+    height = 600
+
+    # Load the image from S3
+    s3 = boto3.client('s3')
+    response = s3.get_object(Bucket=bucket, Key=key)
+    image = Image.open(io.BytesIO(response['Body'].read()))
+
+    # Resize the image
+    resized_image = image.resize((width, height))
+    print("Image resized.")
+
+    # Save the resized image to the same S3 bucket with a different name
+    resized_key = 'resized-' + key
+    with io.BytesIO() as output:
+        resized_image.save(output, format='JPEG')
+        output.seek(0)
+        s3.put_object(Body=output, Bucket=bucket, Key=resized_key)
+
+    print("Image " + resized_key + " uploaded.")
+    return {
+        'statusCode': 200,
+        'body': 'Image resized successfully!'
+    }
+```
+
+# Testing Lambda code with LocalStack
+
+First pull LocalStack image
+```sh
+$ docker pull localstack/localstack
+```
+
+Ensure Ensure Python 3.10 is installed
+```sh
+$ pyenv versions
+$ pyenv global 3.10.14
+$ python --version
+```
+
+Next, we need to install `localstack` and `awscli-local` packages to use them with Docker container
+```sh
+$ pip install --upgrade localstack
+$ pip install awscli-local
+```
+
+The final step is to run our Docker container, attaching the Docker socket. This is required for Lambda functions and other services that necessitate opening additional containers.
+```sh
+$ docker run \
+  --rm -it \
+  -p 4566:4566 \
+  -p 4510-4559:4510-4559 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  localstack/localstack
+```
+
+LocalStack should be started at `http://localhost:4566` or `https://localhost.localstack.cloud:4566`. To check it’s running properly, check the health by visiting `{endpoint}/_localstack/health`.
+```sh
+$ curl --silent https://localhost.localstack.cloud:4566/_localstack/health | jq
+
+{
+  "services": {
+    "acm": "available",
+    "apigateway": "available",
+    "cloudformation": "available",
+    "cloudwatch": "available",
+    "config": "available",
+    "dynamodb": "available",
+    "dynamodbstreams": "available",
+    "ec2": "available",
+    "es": "available",
+    "events": "available",
+    "firehose": "available",
+    "iam": "available",
+    "kinesis": "available",
+    "kms": "available",
+    "lambda": "available",
+    "logs": "available",
+    "opensearch": "available",
+    "redshift": "available",
+    "resource-groups": "available",
+    "resourcegroupstaggingapi": "available",
+    "route53": "available",
+    "route53resolver": "available",
+    "s3": "running",
+    "s3control": "available",
+    "scheduler": "available",
+    "secretsmanager": "available",
+    "ses": "available",
+    "sns": "available",
+    "sqs": "available",
+    "ssm": "available",
+    "stepfunctions": "available",
+    "sts": "available",
+    "support": "available",
+    "swf": "available",
+    "transcribe": "available"
+  },
+  "edition": "community",
+  "version": "3.5.1.dev"
+}
+```
+
+List all S3 buckets to verify that everything is working correctly
+```sh
+$ awslocal s3api list-buckets
+{
+    "Buckets": [],
+    "Owner": {
+        "DisplayName": "webfile",
+        "ID": "75aa57f09aa0c8caeab4f8c24e99d10f8e7faeebf76c078efc7c6caea54ba06a"
+    }
+}
+```
+
+Create S3 bucket for holding image and the resized image
+```sh
+$ awslocal s3 mb s3://awslambda-imageresizer-test-002 --region us-west-2
+make_bucket: awslambda-imageresizer-test-002
+```
+
+List S3 bucket again for verifing S3 bucket created
+```sh
+$ awslocal s3api list-buckets
+
+{
+    "Buckets": [
+        {
+            "Name": "awslambda-imageresizer-test-002",
+            "CreationDate": "2024-07-24T09:03:46+00:00"
+        }
+    ],
+    "Owner": {
+        "DisplayName": "webfile",
+        "ID": "75aa57f09aa0c8caeab4f8c24e99d10f8e7faeebf76c078efc7c6caea54ba06a"
+    }
+}
+```
+
+We can now push the sample image file to the bucket
+```sh
+$ cd ~/techspace/aws/aws-best-practices/lambda-s3-image-resizer
+$ awslocal \
+s3api put-object --bucket awslambda-imageresizer-test-002 \
+--key happy-smiley-face.jpg --body=happy-smiley-face.jpg
+
+{
+    "ETag": "\"7c78efd6e95d7e1928ee34fa25fb5eb1\"",
+    "ServerSideEncryption": "AES256"
+}
+```
+
+Check S3 bucket to verify the image file has been uploaded:
+```sh
+$ awslocal s3api list-objects --bucket awslambda-imageresizer-test-002 --query 'Contents[].{Key: Key, Size: Size}'
+
+[
+    {
+        "Key": "happy-smiley-face.jpg",
+        "Size": 181915
+    }
+]
+```
+
+If we don't want to use the `awslocal` CLI, you can specify the endpoint of LocalStack:
+```sh
+$ aws s3api list-objects --endpoint-url=http://localhost:4566 --bucket awslambda-imageresizer-test-002 --query 'Contents[].{Key: Key, Size: Size}'
+[
+    {
+        "Key": "happy-smiley-face.jpg",
+        "Size": 181915
+    }
+]
+```
+
+We also can create a profile to access LocalStack
+```sh
+$ cat ~/.aws/config
+
+[profile localstack]
+output = json
+region = us-east-1
+endpoint_url = https://localhost.localstack.cloud:4566
+```
+
+Then we can using this profile for the CLI:
+```sh
+$ aws s3api list-objects --profile localstack --bucket awslambda-imageresizer-test-002 --query 'Contents[].{Key: Key, Size: Size}'
+[
+    {
+        "Key": "happy-smiley-face.jpg",
+        "Size": 181915
+    }
+]
+```
+
+Now update the file `run_lambda.py` to allow access LocalStack by using profile
+```python
+import boto3
+boto3.setup_default_session(profile_name='localstack')
+```
+
+Run test lambda by command
+```sh
+$ python3 run_lambda.py
+Got new image: happy-smiley-face.jpg from the bucket: awslambda-imageresizer-test-002
+INFO:botocore.credentials:Found credentials in shared credentials file: ~/.aws/credentials
+INFO:botocore.configprovider:Found endpoint for s3 via: config_global.
+Image resized.
+Image resized-happy-smiley-face.jpg uploaded.
+{'statusCode': 200, 'body': 'Image resized successfully!'}
+```
+
+Re-check the S3 bucket to see the new resized file has been uploaded:
+```sh
+$  aws s3api list-objects --profile localstack --bucket awslambda-imageresizer-test-002 --query 'Contents[].{Key: Key, Size: Size}'
+[
+    {
+        "Key": "happy-smiley-face.jpg",
+        "Size": 181915
+    },
+    {
+        "Key": "resized-happy-smiley-face.jpg",
+        "Size": 73688
+    }
+]
+```
+
+We can download the resized file
+```sh
+$ wget http://localhost:4566/awslambda-imageresizer-test-002/resized-happy-smiley-face.jpg
+```
