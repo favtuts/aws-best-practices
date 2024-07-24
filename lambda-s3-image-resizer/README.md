@@ -541,6 +541,13 @@ $ cat ~/.aws/config
 output = json
 region = us-east-1
 endpoint_url = https://localhost.localstack.cloud:4566
+
+
+$ cat ~/.aws/credentials
+
+[localstack]
+aws_access_key_id=test
+aws_secret_access_key=test
 ```
 
 Then we can using this profile for the CLI:
@@ -589,4 +596,293 @@ $  aws s3api list-objects --profile localstack --bucket awslambda-imageresizer-t
 We can download the resized file
 ```sh
 $ wget http://localhost:4566/awslambda-imageresizer-test-002/resized-happy-smiley-face.jpg
+```
+
+
+# Creating a .zip deployment package with dependencies
+
+* Ref: [Working with .zip file archives for Python Lambda functions](https://docs.aws.amazon.com/lambda/latest/dg/python-package.html)
+
+
+In our case we are using a virtual environment for development. Then following these bellow commands to create the deployment package in a .ZIP file.
+
+First check the folder in which pip install our libraries
+```sh
+(.venv) tvt@TVTLAP:~/techspace/aws/aws-best-practices/lambda-s3-image-resizer$ pip show boto3
+
+Name: boto3
+Version: 1.34.147
+Summary: The AWS SDK for Python
+Home-page: https://github.com/boto/boto3
+Author: Amazon Web Services
+Author-email: 
+License: Apache License 2.0
+Location: /home/tvt/techspace/aws/aws-best-practices/lambda-s3-image-resizer/.venv/lib/python3.10/site-packages
+Requires: botocore, jmespath, s3transfer
+Required-by: 
+```
+
+You can see this folder is located in `.venv/lib/python3.10/site-packages`. We will deactivate the environment, then navigate to this folder:
+```sh
+$ deactivate
+$ cd .venv/lib/python3.10/site-packages
+```
+
+Create a .zip file in your project directory with the installed dependencies at the root
+```
+~/.venv/lib/python3.10/site-packages$ zip -r ../../../../my_deployment_package.zip .
+```
+
+Navigate to the root of your project directory where the `lambda_function.py` file containing your handler code is located and add that file to the root of your .zip package
+```sh
+~/.venv/lib/python3.10/site-packages$ cd ../../../../
+$ zip my_deployment_package.zip lambda_function.py
+adding: lambda_function.py (deflated 52%)
+```
+
+We can check the zip file content structure:
+```sh
+$ unzip -l my_deployment_package.zip
+
+my_deployment_package.zip
+|- bin
+|  |-jp.py
+|- boto3
+|  |-compat.py
+|  |-data
+|  |-docs
+...
+|- lambda_function.py
+```
+
+You can use the `less` utility
+```sh
+$ less my_deployment_package.zip >> my_deployment_package.txt
+```
+
+
+# Deploy lambda to LocalStack using .zip file
+
+Create the Lambda function by running (more details on [Lambda runtimes](https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html)):
+```sh
+$ aws lambda create-function --profile localstack \
+    --region us-west-2 \
+    --function-name aws-lambda-image-resizer \
+    --zip-file fileb://my_deployment_package.zip --handler lambda_function.handler --runtime python3.10 \
+    --role arn:aws:iam::000000000000:role/awslambda-imageresizer-role
+
+{
+    "FunctionName": "aws-lambda-image-resizer",
+    "FunctionArn": "arn:aws:lambda:us-west-2:000000000000:function:aws-lambda-image-resizer",
+    "Runtime": "python3.10",
+    "Role": "arn:aws:iam::000000000000:role/awslambda-imageresizer-role",
+    "Handler": "lambda_function.handler",
+    "CodeSize": 25267190,
+    "Description": "",
+    "Timeout": 3,
+    "MemorySize": 128,
+    "LastModified": "2024-07-24T10:49:18.440759+0000",
+    "CodeSha256": "P5YuoytlaXw6WeDo7weJX/Z4vCSDwcHFD6bayMoUtwY=",
+    "Version": "$LATEST",
+    "TracingConfig": {
+        "Mode": "PassThrough"
+    },
+    "RevisionId": "c8a55e85-57f2-4d53-8e9e-faafcf67b6e7",
+    "State": "Pending",
+    "StateReason": "The function is being created.",
+    "StateReasonCode": "Creating",
+    "PackageType": "Zip",
+    "Architectures": [
+        "x86_64"
+    ],
+    "EphemeralStorage": {
+        "Size": 512
+    },
+    "SnapStart": {
+        "ApplyOn": "None",
+        "OptimizationStatus": "Off"
+    },
+    "RuntimeVersionConfig": {
+        "RuntimeVersionArn": "arn:aws:lambda:us-west-2::runtime:8eeff65f6809a3ce81507fe733fe09b835899b99481ba22fd75b5a7338290ec1"
+    },
+    "LoggingConfig": {
+        "LogFormat": "Text",
+        "LogGroup": "/aws/lambda/aws-lambda-image-resizer"
+    }
+}
+```
+
+We can get information about the function
+```sh
+$ aws lambda --profile localstack --region us-west-2 get-function \
+    --function-name aws-lambda-image-resizer
+
+$ aws lambda --profile localstack --region us-west-2 get-function \
+    --function-name aws-lambda-image-resizer
+{
+    "Configuration": {
+        "FunctionName": "aws-lambda-image-resizer",
+        "FunctionArn": "arn:aws:lambda:us-west-2:000000000000:function:aws-lambda-image-resizer",
+        "Runtime": "python3.10",
+        "Role": "arn:aws:iam::000000000000:role/awslambda-imageresizer-role",
+        "Handler": "lambda_function.handler",
+        "CodeSize": 25267190,
+        "Description": "",
+        "Timeout": 3,
+        "MemorySize": 128,
+        "LastModified": "2024-07-24T10:49:18.440759+0000",
+        "CodeSha256": "P5YuoytlaXw6WeDo7weJX/Z4vCSDwcHFD6bayMoUtwY=",
+        "Version": "$LATEST",
+        "TracingConfig": {
+            "Mode": "PassThrough"
+        },
+        "RevisionId": "32a13c74-a942-424d-abfe-17ac2feec0c3",
+        "State": "Active",
+        "LastUpdateStatus": "Successful",
+        "PackageType": "Zip",
+        "Architectures": [
+            "x86_64"
+        ],
+        "EphemeralStorage": {
+            "Size": 512
+        },
+        "SnapStart": {
+            "ApplyOn": "None",
+            "OptimizationStatus": "Off"
+        },
+        "RuntimeVersionConfig": {
+            "RuntimeVersionArn": "arn:aws:lambda:us-west-2::runtime:8eeff65f6809a3ce81507fe733fe09b835899b99481ba22fd75b5a7338290ec1"
+        },
+        "LoggingConfig": {
+            "LogFormat": "Text",
+            "LogGroup": "/aws/lambda/aws-lambda-image-resizer"
+        }
+    },
+    "Code": {
+        "RepositoryType": "S3",
+        "Location": "http://s3.localhost.localstack.cloud:4566/awslambda-us-west-2-tasks/snapshots/000000000000/aws-lambda-image-resizer-abfb9c21-4ad5-417c-9e56-54e1a90ca3c8?AWSAccessKeyId=949334387222&Signature=0xB0lY56TWAABIrHwo7%2FThtBTAE%3D&Expires=1721822010"
+    }
+}
+```
+
+
+You can see that the default function timeout is 3 sec. This is really low. We know that our code will not be able to download, resize and upload an image in 3 sec. 
+
+So lets update the configuration.
+```sh
+$ aws lambda --profile localstack --region us-west-2 update-function-configuration \
+    --function-name aws-lambda-image-resizer \
+    --timeout 120
+```
+
+
+Now let's add the image upload event trigger in S3 to trigger our Lambda function.
+```sh
+$ aws lambda --profile localstack --region us-west-2 add-permission \
+    --function-name aws-lambda-image-resizer \
+    --action "lambda:InvokeFunction" \
+    --principal s3.amazonaws.com \
+    --source-arn arn:aws:s3:::awslambda-imageresizer-test-002 \
+    --statement-id s3-trigger
+
+{
+    "Statement": "{\"Sid\": \"s3-trigger\", \"Effect\": \"Allow\", \"Action\": \"lambda:InvokeFunction\", \"Resource\": \"arn:aws:lambda:us-west-2:000000000000:function:aws-lambda-image-resizer\", \"Principal\": {\"Service\": \"s3.amazonaws.com\"}, \"Condition\": {\"ArnLike\": {\"AWS:SourceArn\": \"arn:aws:s3:::awslambda-imageresizer-test-002\"}}}"
+}
+```
+
+Now we'll add the bucket notification configuration so that our Lambda function is notified when anyone uploads a file with prefix "test-" and suffix ".jpg"
+```sh
+$ aws s3api put-bucket-notification-configuration --profile localstack \
+    --bucket awslambda-imageresizer-test-002 \
+    --notification-configuration '{
+    "LambdaFunctionConfigurations": [
+      {
+        "LambdaFunctionArn": "arn:aws:lambda:us-west-2:000000000000:function:aws-lambda-image-resizer",
+        "Events": ["s3:ObjectCreated:*"],
+        "Filter": {
+          "Key": {
+            "FilterRules": [
+              {
+                "Name": "prefix",
+                "Value": "test-"
+              },
+              {
+                "Name": "suffix",
+                "Value": ".jpg"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }'
+```
+
+Now let's test our setup by uploading a file.
+```sh
+$ aws --profile localstack s3 cp test-happy-smiley-face.jpg s3://awslambda-imageresizer-test-002/
+```
+
+
+You can check the Lambda logs
+```sh
+$ aws --profile localstack logs tail '/aws/lambda/aws-lambda-image-resizer' --follow
+```
+or using command
+```sh
+$ aws --profile localstack \
+s3api put-object --bucket awslambda-imageresizer-test-002 \
+--key test-happy-smiley-face.jpg --body=test-happy-smiley-face.jpg
+```
+
+We will check the logs. In order to do that we need to find the Cloudwatch LogGroup
+```sh
+$ aws --profile localstack --region us-west-2 logs describe-log-groups
+
+{
+    "logGroups": [
+        {
+            "logGroupName": "/aws/lambda/aws-lambda-image-resizer",
+            "creationTime": 1721819360023,
+            "metricFilterCount": 0,
+            "arn": "arn:aws:logs:us-west-2:000000000000:log-group:/aws/lambda/aws-lambda-image-resizer:*",
+            "storedBytes": 418
+        }
+    ]
+}
+```
+
+Now we can check the logs to see how our function ran.
+```sh
+$ aws --profile localstack --region us-west-2 logs \
+    tail /aws/lambda/aws-lambda-image-resizer
+2024-07-24T11:09:20.014000+00:00 2024/07/24/[$LATEST]002eb047d7237ce44a04639e8cc81d21 START RequestId: 47063038-4a20-4326-b3ea-f0849a8d80e1 Version: $LATEST
+2024-07-24T11:09:20.016000+00:00 2024/07/24/[$LATEST]002eb047d7237ce44a04639e8cc81d21 Got new image: test-happy-smiley-face.jpg from the bucket: awslambda-imageresizer-test-002
+2024-07-24T11:09:20.018000+00:00 2024/07/24/[$LATEST]002eb047d7237ce44a04639e8cc81d21 Image resized.
+2024-07-24T11:09:20.020000+00:00 2024/07/24/[$LATEST]002eb047d7237ce44a04639e8cc81d21 Image resized-test-happy-smiley-face.jpg uploaded.
+2024-07-24T11:09:20.023000+00:00 2024/07/24/[$LATEST]002eb047d7237ce44a04639e8cc81d21 END RequestId: 47063038-4a20-4326-b3ea-f0849a8d80e1
+2024-07-24T11:09:20.025000+00:00 2024/07/24/[$LATEST]002eb047d7237ce44a04639e8cc81d21 REPORT RequestId: 47063038-4a20-4326-b3ea-f0849a8d80e1 Duration: 179.32 ms     Billed Duration: 180 ms Memory Size: 128 MB  Max Memory Used: 128 MB
+```
+
+List bucket objects
+```sh
+$ aws s3api list-objects --bucket awslambda-imageresizer-test-002 --query 'Contents[].{Key: Key, Size: Size}' --profile localstack
+[
+    {
+        "Key": "happy-smiley-face.jpg",
+        "Size": 181915
+    },
+    {
+        "Key": "resized-happy-smiley-face.jpg",
+        "Size": 73688
+    },
+    {
+        "Key": "resized-test-happy-smiley-face.jpg",
+        "Size": 73688
+    },
+    {
+        "Key": "test-happy-smiley-face.jpg",
+        "Size": 181915
+    }
+]
 ```
