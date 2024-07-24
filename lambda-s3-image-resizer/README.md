@@ -55,7 +55,7 @@ $ python3 --version
 Python 3.10.14
 ```
 
-If you are using VS Code, you have to select the environment using the `Python: Select interpreter` command to select the correct interpreter path:
+If you are using VS Code, you have to [select the environment](https://code.visualstudio.com/docs/python/environments) using the `Python: Select interpreter` command to select the correct interpreter path:
 
 ![vs_python_interpreter](./images/aws-lambda-resizer-vscode-python-interpreter.png)
 
@@ -204,7 +204,7 @@ $ aws iam list-attached-role-policies --profile tvt_admin \
 ![iam_role_attached_policies](./images/aws-lambda-resizer-iam-role.png)
 
 
-# Setting up the code
+# Setting up the Environment
 
 Create `requirements.txt` contains the libraries
 * `boto3`: connect to S3, open image from S3 bucket, upload the resized image to S3 bucket
@@ -263,3 +263,77 @@ Freezing dependencies: Pip can export a list of all installed packages and their
 ```sh
 $ python3 -m pip freeze
 ```
+
+# Prepare for Debuging and Testing
+
+If you are using VS Code, make sure the environment you want to use is selected in the Python extension for VS Code by running the [Select Interpreter](https://code.visualstudio.com/docs/python/environments) command or via the status bar. Otherwise you can explicitly [set the Python interpreter to be used when debugging](https://code.visualstudio.com/docs/python/debugging#_python) via the python setting for your debug config
+
+Menubar -> View -> Command Palette -> Python: Select Interpreter
+
+![vs_debug_activated_python_env](./images/aws-lambda-resizer-vscode-activated-python-env.png)
+
+Create a file [lambda_function.py](lambda_function.py) with the minimum codes for testing first
+```python
+import boto3
+from PIL import Image
+import io
+
+def handler(event, context):
+    # Get the S3 bucket and key from the event
+    bucket = event['Records'][0]['s3']['bucket']['name']
+    key = event['Records'][0]['s3']['object']['key']
+    print("Got new image: " + key + " from the bucket: " + bucket)
+    return {
+        'statusCode': 200,
+        'body': 'Image resized successfully!'
+    }
+```
+
+Create a file [run_lambda.py](./run_lambda.py) for debuging and testing my lambda code
+```python
+import os
+import json
+
+import logging
+logging.basicConfig(level=logging.INFO)
+
+import lambda_function as my_lambda
+
+def run_my_lambda():
+    # To escape JSON for fixtures
+    # https://www.freeformatter.com/json-escape.html
+    with open('./tests/fixtures/lambda_events/s3-object-created-put-event.json') as json_file:
+        data = json.load(json_file)
+        response = my_lambda.handler(event=data, context={})
+        print(response)
+
+
+if __name__ == '__main__':    
+    run_my_lambda()
+```
+
+This program will read the [S3 ObjectCreated::Put] event from the fixture file: [s3-object-created-put-event.json](./tests/fixtures/lambda_events/s3-object-created-put-event.json) and pass the data to lamdbda handler function.
+
+
+In VSCode, you need to install the Python Debugger extension. Then configure the launch.json file
+```json
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        }
+    ]
+}
+```
+
+Finally, open the file `run_lambda.py`, then cho RUN AND DEBUG with configuration: `Python Debugger: Current File`
+
+![vs_run_debug_lambda](./images/aws-lambda-resizer-vscode-run-and-debug.png)
